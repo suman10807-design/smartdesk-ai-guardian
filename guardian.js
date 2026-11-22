@@ -13,18 +13,49 @@ const StudyGuardian = {
   browserVisible: !document.hidden,
   windowFocused: document.hasFocus(),
   cameraReady: false,
+  visionModule: null,
+
+  async loadFaceDetector() {
+    if (this.detector) return true;
+
+    GuardianApp.setCameraStatus("Loading face detection...");
+
+    try {
+      const vision = await import(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm"
+      );
+
+      this.visionModule = vision;
+
+      const fileset = await vision.FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+      );
+
+      this.detector = await vision.FaceDetector.createFromOptions(
+        fileset,
+        {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
+          },
+          runningMode: "VIDEO",
+          minDetectionConfidence: 0.5
+        }
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Face detector loading error:", error);
+      GuardianApp.log("Could not load face detection. Check your internet connection.");
+      GuardianApp.setCameraStatus("Face detection unavailable");
+      return false;
+    }
+  },
 
   async enableCamera() {
     if (!navigator.mediaDevices?.getUserMedia) {
       GuardianApp.log("Camera access is not supported by this browser.");
-      return false;
-    }
-
-    if (!("FaceDetector" in window)) {
-      GuardianApp.log(
-        "Native face detection is unavailable in this browser. Webcam presence checking cannot start yet."
-      );
-      GuardianApp.setCameraStatus("Face detection unsupported");
+      GuardianApp.setCameraStatus("Camera unsupported");
       return false;
     }
 
@@ -39,21 +70,27 @@ const StudyGuardian = {
       });
 
       const video = document.getElementById("cameraPreview");
+
+      if (!video) {
+        throw new Error("Camera preview element was not found.");
+      }
+
       video.srcObject = this.stream;
       video.hidden = false;
-
       await video.play();
 
-      this.detector = new FaceDetector({
-        fastMode: true,
-        maxDetectedFaces: 1
-      });
+      const loaded = await this.loadFaceDetector();
+
+      if (!loaded) {
+        this.disableCamera();
+        return false;
+      }
 
       this.cameraReady = true;
       this.present = false;
 
       GuardianApp.setCameraStatus("Camera active");
-      GuardianApp.log("Webcam activated. Face presence checking is ready.");
+      GuardianApp.log("Camera and face detection activated.");
 
       if (this.active) this.startChecking();
 
@@ -74,11 +111,16 @@ const StudyGuardian = {
     }
 
     this.stream = null;
-    this.detector = null;
     this.cameraReady = false;
     this.present = false;
 
+    if (this.detector) {
+      this.detector.close();
+      this.detector = null;
+    }
+
     const video = document.getElementById("cameraPreview");
+
     if (video) {
       video.pause();
       video.srcObject = null;
@@ -101,7 +143,7 @@ const StudyGuardian = {
     if (this.cameraReady) {
       this.startChecking();
     } else {
-      GuardianApp.log("Browser activity monitoring started. Enable webcam for desk-presence detection.");
+      GuardianApp.log("Browser activity monitoring started. Enable webcam for face detection.");
     }
 
     this.evaluatePresence();
@@ -129,26 +171,25 @@ const StudyGuardian = {
     this.checkFace();
   },
 
-  stopChecking() {
-    if (this.checkTimer) {
-      clearInterval(this.checkTimer);
-      this.checkTimer = null;
-    }
-  },
-
   async checkFace() {
     if (!this.active || !this.cameraReady || this.checking) return;
 
     const video = document.getElementById("cameraPreview");
+
     if (!video || video.readyState < 2) return;
 
     this.checking = true;
 
     try {
-      const faces = await this.detector.detect(video);
+      const result = this.detector.detectForVideo(
+        video,
+        performance.now()
+      );
+
+      const faces = result.detections || [];
       this.setPresence(faces.length > 0);
     } catch (error) {
-      GuardianApp.log("Face detection temporarily unavailable.");
+      console.error("Face detection error:", error);
     } finally {
       this.checking = false;
     }
@@ -167,8 +208,8 @@ const StudyGuardian = {
     const browserAvailable =
       this.browserVisible && this.windowFocused;
 
-    const isPresent = browserAvailable &&
-      (!this.cameraReady || this.present);
+    const isPresent =
+      browserAvailable && (!this.cameraReady || this.present);
 
     if (isPresent) {
       this.absenceStarted = null;
