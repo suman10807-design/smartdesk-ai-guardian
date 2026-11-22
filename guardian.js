@@ -8,54 +8,55 @@ const StudyGuardian = {
   absenceStarted: null,
   absenceDelay: 5000,
   lastWarning: 0,
-  warningInterval: 12000,
+  warningInterval: 5000,
   checkTimer: null,
   browserVisible: !document.hidden,
   windowFocused: document.hasFocus(),
   cameraReady: false,
-  visionModule: null,
+
+  baselineYaw: null,
+  calibrationSamples: [],
+  calibrationFrames: 30,
+  yawThreshold: 0.18,
 
   async loadFaceDetector() {
-    if (this.detector) return true;
-
-    GuardianApp.setCameraStatus("Loading face detection...");
-
     try {
       const vision = await import(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm"
       );
 
-      this.visionModule = vision;
-
       const fileset = await vision.FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
       );
 
-      this.detector = await vision.FaceDetector.createFromOptions(
+      this.detector = await vision.FaceLandmarker.createFromOptions(
         fileset,
         {
           baseOptions: {
             modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
+              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
           },
           runningMode: "VIDEO",
-          minDetectionConfidence: 0.5
+          numFaces: 1,
+          minFaceDetectionConfidence: 0.5,
+          minFacePresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5
         }
       );
 
       return true;
     } catch (error) {
-      console.error("Face detector loading error:", error);
-      GuardianApp.log("Could not load face detection. Check your internet connection.");
-      GuardianApp.setCameraStatus("Face detection unavailable");
+      console.error("Face Landmarker error:", error);
+      GuardianApp.log("Could not load head detection. Check your internet connection.");
+      GuardianApp.setCameraStatus("Detection unavailable");
       return false;
     }
   },
 
   async enableCamera() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      GuardianApp.log("Camera access is not supported by this browser.");
       GuardianApp.setCameraStatus("Camera unsupported");
+      GuardianApp.log("Camera access is not supported.");
       return false;
     }
 
@@ -72,12 +73,14 @@ const StudyGuardian = {
       const video = document.getElementById("cameraPreview");
 
       if (!video) {
-        throw new Error("Camera preview element was not found.");
+        throw new Error("Camera preview element not found.");
       }
 
       video.srcObject = this.stream;
       video.hidden = false;
       await video.play();
+
+      GuardianApp.setCameraStatus("Loading detection...");
 
       const loaded = await this.loadFaceDetector();
 
@@ -88,14 +91,18 @@ const StudyGuardian = {
 
       this.cameraReady = true;
       this.present = false;
+      this.baselineYaw = null;
+      this.calibrationSamples = [];
 
       GuardianApp.setCameraStatus("Camera active");
-      GuardianApp.log("Camera and face detection activated.");
+      GuardianApp.log("Camera active. Face the camera for initial calibration.");
 
       if (this.active) this.startChecking();
 
       return true;
+
     } catch (error) {
+      console.error(error);
       GuardianApp.log("Camera could not start: " + error.message);
       GuardianApp.setCameraStatus("Camera unavailable");
       this.disableCamera();
@@ -111,13 +118,16 @@ const StudyGuardian = {
     }
 
     this.stream = null;
-    this.cameraReady = false;
-    this.present = false;
 
     if (this.detector) {
       this.detector.close();
-      this.detector = null;
     }
+
+    this.detector = null;
+    this.cameraReady = false;
+    this.present = false;
+    this.baselineYaw = null;
+    this.calibrationSamples = [];
 
     const video = document.getElementById("cameraPreview");
 
@@ -143,7 +153,7 @@ const StudyGuardian = {
     if (this.cameraReady) {
       this.startChecking();
     } else {
-      GuardianApp.log("Browser activity monitoring started. Enable webcam for face detection.");
+      GuardianApp.log("Browser activity monitoring started. Enable webcam for head monitoring.");
     }
 
     this.evaluatePresence();
@@ -166,9 +176,24 @@ const StudyGuardian = {
 
     this.checkTimer = setInterval(() => {
       this.checkFace();
-    }, 1200);
+    }, 500);
 
     this.checkFace();
+  },
+
+  getHeadDirection(landmarks) {
+    const leftEye = landmarks[33];
+    const rightEye = landmarks[263];
+    const nose = landmarks[1];
+
+    if (!leftEye || !rightEye || !nose) return null;
+
+    const eyeMiddle = (leftEye.x + rightEye.x) / 2;
+    const eyeDistance = Math.abs(rightEye.x - leftEye.x);
+
+    if (eyeDistance < 0.001) return null;
+
+    return (nose.x - eyeMiddle) / eyeDistance;
   },
 
   async checkFace() {
@@ -186,10 +211,39 @@ const StudyGuardian = {
         performance.now()
       );
 
-      const faces = result.detections || [];
-      this.setPresence(faces.length > 0);
+      const faces = result.faceLandmarks || [];
+
+      if (faces.length === 0) {
+        this.setPresence(false);
+        return;
+      }
+
+      const yaw = this.getHeadDirection(faces[0]);
+
+      if (yaw === null) return;
+
+      // Calibrate while the student faces the camera.
+      if (this.baselineYaw === null) {
+        this.calibrationSamples.push(yaw);
+
+        if (this.calibrationSamples.length >= this.calibrationFrames) {
+          const sorted = [...this.calibrationSamples].sort((a, b) => a - b);
+          this.baselineYaw = sorted[Math.floor(sorted.length / 2)];
+
+          GuardianApp.log("Head direction calibrated. Focus monitoring active.");
+        }
+
+        this.setPresence(true);
+        return;
+      }
+
+      const deviation = Math.abs(yaw - this.baselineYaw);
+      const facingForward = deviation < this.yawThreshold;
+
+      this.setPresence(facingForward);
+
     } catch (error) {
-      console.error("Face detection error:", error);
+      console.error("Head detection error:", error);
     } finally {
       this.checking = false;
     }
@@ -217,7 +271,7 @@ const StudyGuardian = {
       if (GuardianApp.isDistractionPaused()) {
         GuardianApp.resumeAfterReturn();
         GuardianVoice.welcomeBack();
-        GuardianApp.log("Presence detected. Study timer resumed.");
+        GuardianApp.log("Focus returned. Study timer resumed.");
       }
 
       return;
@@ -268,3 +322,4 @@ const StudyGuardian = {
     StudyGuardian.evaluatePresence();
   }
 };
+
