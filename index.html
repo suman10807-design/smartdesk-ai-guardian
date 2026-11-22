@@ -1,0 +1,132 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07111f">
+  <title>SMARTDESK AI | Guardian Mode</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#">
+        <span class="brand-icon">S</span>
+        <span>SMARTDESK <small>AI GUARDIAN</small></span>
+      </a>
+      <div class="guardian-status">
+        <span class="status-dot"></span>
+        GUARDIAN READY
+      </div>
+    </header>
+
+    <main class="dashboard">
+      <section class="welcome">
+        <p class="eyebrow">PERSONAL STUDY COMMAND CENTRE</p>
+        <h1>Focus starts <span>here.</span></h1>
+        <p>Your intelligent study companion is ready.</p>
+      </section>
+
+      <section class="timer-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CURRENT SESSION</p>
+            <h2 id="sessionStatus">Ready to focus</h2>
+          </div>
+          <span class="live-label">● SYSTEM READY</span>
+        </div>
+
+        <div class="timer-ring">
+          <div class="timer-content">
+            <span id="timerLabel">STUDY TIME</span>
+            <strong id="timer">00:00:00</strong>
+            <small id="timerMessage">Set your study duration</small>
+          </div>
+        </div>
+
+        <div class="timer-settings">
+          <label>
+            Study hours
+            <input id="studyHours" type="number" min="0" max="99" value="2">
+          </label>
+          <label>
+            Study minutes
+            <input id="studyMinutes" type="number" min="0" max="59" value="0">
+          </label>
+        </div>
+
+        <div class="action-buttons">
+          <button id="startBtn" class="primary-btn">Start studying</button>
+          <button id="pauseBtn" class="secondary-btn">Pause</button>
+          <button id="endBtn" class="secondary-btn">End session</button>
+        </div>
+      </section>
+
+      <section class="feature-grid">
+        <article class="feature-card">
+          <span class="feature-icon">◉</span>
+          <p class="eyebrow">WEBCAM GUARDIAN</p>
+          <h3 id="cameraStatus">Not activated</h3>
+          <button id="cameraBtn" class="small-btn">Enable camera</button>
+          <video id="cameraPreview" autoplay muted playsinline hidden></video>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-icon">◌</span>
+          <p class="eyebrow">VOICE ASSISTANT</p>
+          <h3>Talk to Guardian</h3>
+          <button id="voiceBtn" class="small-btn">Test robotic voice</button>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-icon">◷</span>
+          <p class="eyebrow">BREAK CONTROL</p>
+          <h3>Take a break</h3>
+          <div class="break-controls">
+            <input id="breakMinutes" type="number" min="1" max="180" value="15" aria-label="Break duration in minutes">
+            <button id="breakBtn" class="small-btn">Start break</button>
+          </div>
+        </article>
+
+        <article class="feature-card">
+          <span class="feature-icon">✧</span>
+          <p class="eyebrow">FOCUS REPORT</p>
+          <h3 id="focusReport">0 minutes studied</h3>
+          <p class="muted">Today's recorded study time</p>
+        </article>
+      </section>
+
+      <section class="assistant-card">
+        <div>
+          <p class="eyebrow">SMARTDESK AI</p>
+          <h2>Talk with your assistant</h2>
+          <p id="assistantReply">Hello! I'm your study guardian. Ready when you are.</p>
+        </div>
+        <div class="chat-controls">
+          <input id="commandInput" type="text" placeholder="Type a command...">
+          <button id="sendBtn" class="primary-btn">Send</button>
+          <button id="micBtn" class="secondary-btn" aria-label="Speak command">🎙</button>
+        </div>
+      </section>
+
+      <section class="activity-card">
+        <p class="eyebrow">GUARDIAN ACTIVITY</p>
+        <h2>System activity</h2>
+        <ul id="activityLog">
+          <li>SMARTDESK AI initialized.</li>
+          <li>Waiting for your first study session.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>SMARTDESK AI · GUARDIAN MODE · YOUR FOCUS MATTERS</footer>
+  </div>
+
+  <script src="storage.js"></script>
+  <script src="voice.js"></script>
+  <script src="scheduler.js"></script>
+  <script src="guardian.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
